@@ -3,6 +3,7 @@
     "icon": "",
     "label": "Background",
     "aliases": ["background", "wallpaper"],
-    "action": "\"$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/bin/motion-backgrounds\" pick"
+    "action": "\"$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/bin/motion-backgrounds\" pick",
+    "when": "test -x \"$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/bin/motion-backgrounds\""
   },
   // motion-backgrounds:end

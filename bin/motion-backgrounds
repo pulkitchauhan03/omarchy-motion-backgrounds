@@ -3,6 +3,7 @@
 set -euo pipefail
 
 readonly PLUGIN_ID="io.github.pulkitchauhan.motion-backgrounds"
+readonly PLUGIN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 readonly STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 readonly CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
@@ -14,7 +15,11 @@ readonly CACHE_DIR="$CACHE_HOME/motion-backgrounds/thumbnails"
 readonly CURRENT_THEME_DIR="$HOME/.local/state/omarchy/current/theme/backgrounds"
 readonly CURRENT_THEME_NAME_FILE="$HOME/.local/state/omarchy/current/theme.name"
 readonly CURRENT_BACKGROUND_LINK="$HOME/.local/state/omarchy/current/background"
-readonly FALLBACK_THUMBNAIL="$CONFIG_HOME/omarchy/plugins/$PLUGIN_ID/assets/video.svg"
+readonly MENU_FILE="$CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc"
+readonly MENU_ENTRY="$PLUGIN_DIR/assets/menu-entry.jsonc"
+readonly DEFAULT_WALLPAPER_NAME="samurai-katana-in-forest-cinematic-4k-live-wallpaper.mp4"
+readonly BUNDLED_WALLPAPER="$PLUGIN_DIR/assets/walls/$DEFAULT_WALLPAPER_NAME"
+readonly FALLBACK_THUMBNAIL="$PLUGIN_DIR/assets/video.svg"
 readonly BACKGROUND_TRANSITION_SECONDS="0.46"
 readonly PLAYER_UNIT="motion-backgrounds-wallpaper.service"
 
@@ -23,6 +28,8 @@ usage() {
 Usage: motion-backgrounds <command> [argument]
 
 Commands:
+  bootstrap        Initialize user data and Omarchy menu integration
+  cleanup          Remove integration, state, and cache (keeps wallpapers)
   pick             Open the mixed image/video wallpaper picker
   apply <file>     Apply an image or video immediately
   reconcile        Restore or reconcile the saved live wallpaper
@@ -61,6 +68,94 @@ is_image() {
 
 ensure_dirs() {
   mkdir -p "$WALLS_DIR" "$STATE_DIR" "$CACHE_DIR"
+}
+
+strip_menu_entry() {
+  local source="$1"
+  local destination="$2"
+
+  awk '
+    /^[[:space:]]*\/\/ motion-backgrounds:start[[:space:]]*$/ { skipping = 1; next }
+    /^[[:space:]]*\/\/ motion-backgrounds:end[[:space:]]*$/ { skipping = 0; next }
+    !skipping { print }
+  ' "$source" >"$destination"
+}
+
+install_default_wallpaper() {
+  local destination="$WALLS_DIR/$DEFAULT_WALLPAPER_NAME"
+
+  [[ -f $BUNDLED_WALLPAPER ]] || {
+    notify_error "Bundled wallpaper is missing"
+    return 1
+  }
+
+  if [[ ! -e $destination ]]; then
+    install -m 0644 "$BUNDLED_WALLPAPER" "$destination"
+  fi
+}
+
+install_menu_entry() {
+  local clean_file temporary
+
+  [[ -f $MENU_ENTRY ]] || {
+    notify_error "Bundled menu entry is missing"
+    return 1
+  }
+
+  mkdir -p "$(dirname "$MENU_FILE")"
+  if [[ ! -f $MENU_FILE ]]; then
+    printf '{\n}\n' >"$MENU_FILE"
+  fi
+
+  clean_file="$MENU_FILE.clean.$$"
+  temporary="$MENU_FILE.tmp.$$"
+  strip_menu_entry "$MENU_FILE" "$clean_file"
+
+  awk -v block="$MENU_ENTRY" '
+    !inserted && index($0, "{") {
+      print
+      while ((getline line < block) > 0) print line
+      close(block)
+      inserted = 1
+      next
+    }
+    { print }
+    END { if (!inserted) exit 1 }
+  ' "$clean_file" >"$temporary"
+
+  rm -f "$clean_file"
+  mv -f "$temporary" "$MENU_FILE"
+  omarchy menu refresh >/dev/null 2>&1 || true
+}
+
+remove_menu_entry() {
+  local temporary
+
+  [[ -f $MENU_FILE ]] || return 0
+  temporary="$MENU_FILE.tmp.$$"
+  strip_menu_entry "$MENU_FILE" "$temporary"
+  mv -f "$temporary" "$MENU_FILE"
+  omarchy menu refresh >/dev/null 2>&1 || true
+}
+
+check_dependencies() {
+  if ! command -v mpvpaper >/dev/null 2>&1; then
+    notify_error "Install mpvpaper first: omarchy pkg aur add mpvpaper"
+    return 1
+  fi
+}
+
+bootstrap() {
+  ensure_dirs
+  install_default_wallpaper
+  install_menu_entry
+  check_dependencies || true
+}
+
+cleanup() {
+  stop_player
+  remove_menu_entry
+  rm -rf "$STATE_DIR" "$CACHE_HOME/motion-backgrounds"
 }
 
 stop_player() {
@@ -112,7 +207,7 @@ start_player() {
 
   player=$(command -v mpvpaper 2>/dev/null || true)
   [[ -n $player ]] || {
-    notify_error "mpvpaper is not installed"
+    notify_error "Install mpvpaper first: omarchy pkg aur add mpvpaper"
     return 1
   }
 
@@ -278,7 +373,7 @@ thumbnail_for_video() {
 
   if [[ ! -s $thumbnail ]]; then
     temporary="$thumbnail.tmp.$$.jpg"
-    if ffmpeg -hide_banner -loglevel error -y \
+    if command -v ffmpeg >/dev/null 2>&1 && ffmpeg -hide_banner -loglevel error -y \
       -ss 1 -i "$video" -frames:v 1 \
       -vf "scale=1536:864:force_original_aspect_ratio=decrease,pad=1536:864:(ow-iw)/2:(oh-ih)/2" \
       "$temporary"; then
@@ -344,11 +439,6 @@ selected_wallpaper() {
 
 pick_wallpaper() {
   ensure_dirs
-  command -v ffmpeg >/dev/null 2>&1 || {
-    notify_error "ffmpeg is required to preview video wallpapers"
-    return 1
-  }
-
   local rows rows_b64 selected open_result choice
   rows=$(list_rows)
   [[ -n $rows ]] || {
@@ -393,6 +483,8 @@ main() {
   ensure_dirs
 
   case "${1:-}" in
+    bootstrap) bootstrap ;;
+    cleanup) cleanup ;;
     pick) pick_wallpaper ;;
     apply) apply_wallpaper "${2:-}" ;;
     reconcile|restore) reconcile ;;

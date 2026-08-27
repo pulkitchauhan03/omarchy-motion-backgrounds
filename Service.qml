@@ -14,8 +14,18 @@ Item {
     if (!reconcileProcess.running) reconcileProcess.running = true
   }
 
+  function bootstrap() {
+    if (!bootstrapProcess.running) bootstrapProcess.running = true
+  }
+
   function openPicker() {
     if (!pickerProcess.running) pickerProcess.running = true
+  }
+
+  Process {
+    id: bootstrapProcess
+    command: [root.controller, "bootstrap"]
+    onExited: root.reconcile()
   }
 
   Process {
@@ -37,13 +47,7 @@ Item {
     onFileChanged: reload()
   }
 
-  // The timer covers a first run where theme.name does not exist yet.
-  Timer {
-    interval: 500
-    running: true
-    repeat: false
-    onTriggered: root.reconcile()
-  }
+  Component.onCompleted: root.bootstrap()
 
   IpcHandler {
     target: "motion-backgrounds"
