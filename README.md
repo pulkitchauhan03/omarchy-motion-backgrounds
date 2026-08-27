@@ -62,6 +62,17 @@ Place wallpapers that should be available under every theme in:
 
 Open the picker with `Super+Ctrl+Space`, or choose **Style → Background** from the Omarchy menu. The directories are scanned each time the picker opens, so newly added files appear without a reload or restart.
 
+To copy a new image or video into the global library and activate it
+immediately, run:
+
+```bash
+motion-backgrounds add ~/Downloads/my-wallpaper.mp4
+```
+
+Bootstrap installs the short `motion-backgrounds` command in `~/.local/bin`.
+If another file already owns that command name, the plugin leaves it untouched
+and reports the conflict.
+
 ### Wallpaper scope
 
 - Files in `~/.config/motion-backgrounds/walls/` are global and remain active across theme changes.
@@ -86,15 +97,14 @@ motion-backgrounds-wallpaper.service
 ## Commands
 
 ```bash
-controller="$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/bin/motion-backgrounds"
-
-"$controller" pick
-"$controller" apply /path/to/wallpaper.mp4
-"$controller" status
-"$controller" stop
-"$controller" reconcile
-"$controller" bootstrap
-"$controller" cleanup
+motion-backgrounds add /path/to/new-wallpaper.mp4
+motion-backgrounds pick
+motion-backgrounds apply /path/to/wallpaper.mp4
+motion-backgrounds status
+motion-backgrounds stop
+motion-backgrounds reconcile
+motion-backgrounds bootstrap
+motion-backgrounds cleanup
 ```
 
 ## Storage
@@ -116,7 +126,7 @@ omarchy plugin update io.github.pulkitchauhan.motion-backgrounds
 Run cleanup while the controller is still installed, then use Omarchy's plugin manager:
 
 ```bash
-"$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/bin/motion-backgrounds" cleanup
+motion-backgrounds cleanup
 omarchy plugin remove io.github.pulkitchauhan.motion-backgrounds
 ```
 

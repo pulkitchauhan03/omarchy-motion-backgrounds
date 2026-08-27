@@ -9,6 +9,9 @@ readonly STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 readonly CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 readonly CONFIG_DIR="$CONFIG_HOME/motion-backgrounds"
 readonly WALLS_DIR="$CONFIG_DIR/walls"
+readonly USER_BIN_DIR="$HOME/.local/bin"
+readonly CLI_PATH="$USER_BIN_DIR/motion-backgrounds"
+readonly CONTROLLER_PATH="$PLUGIN_DIR/bin/motion-backgrounds"
 readonly STATE_DIR="$STATE_HOME/motion-backgrounds"
 readonly STATE_FILE="$STATE_DIR/current.json"
 readonly INITIALIZED_FILE="$STATE_DIR/initialized"
@@ -34,6 +37,7 @@ Commands:
   bootstrap        Initialize user data and Omarchy menu integration
   cleanup          Remove integration, state, and cache (keeps wallpapers)
   pick             Open the mixed image/video wallpaper picker
+  add <file>       Copy a wallpaper into the global library and activate it
   apply <file>     Apply an image or video immediately
   reconcile        Restore or reconcile the saved live wallpaper
   stop             Stop the live wallpaper and clear its saved state
@@ -157,6 +161,27 @@ remove_menu_entry() {
   omarchy menu refresh >/dev/null 2>&1 || true
 }
 
+install_cli() {
+  mkdir -p "$USER_BIN_DIR"
+
+  if [[ -e $CLI_PATH || -L $CLI_PATH ]]; then
+    if [[ -L $CLI_PATH && $(readlink -f "$CLI_PATH" 2>/dev/null || true) == "$CONTROLLER_PATH" ]]; then
+      return 0
+    fi
+
+    notify_error "Command already exists and was left unchanged: $CLI_PATH"
+    return 0
+  fi
+
+  ln -s "$CONTROLLER_PATH" "$CLI_PATH"
+}
+
+remove_cli() {
+  if [[ -L $CLI_PATH && $(readlink -f "$CLI_PATH" 2>/dev/null || true) == "$CONTROLLER_PATH" ]]; then
+    rm -f "$CLI_PATH"
+  fi
+}
+
 check_dependencies() {
   if ! command -v mpvpaper >/dev/null 2>&1; then
     notify_error "Install mpvpaper first: omarchy pkg aur add mpvpaper"
@@ -178,6 +203,7 @@ bootstrap() {
 
   install_default_wallpaper
   install_menu_entry
+  install_cli
 
   if [[ -e $DEFAULT_PENDING_FILE ]]; then
     # Keep the pending marker when mpvpaper is unavailable. A later bootstrap
@@ -194,6 +220,7 @@ bootstrap() {
 cleanup() {
   stop_player
   remove_menu_entry
+  remove_cli
   rm -rf "$STATE_DIR" "$CACHE_HOME/motion-backgrounds"
 }
 
@@ -377,6 +404,43 @@ apply_wallpaper() {
   fi
 }
 
+add_wallpaper() {
+  local input="${1:-}"
+  local source destination
+
+  [[ -n $input ]] || {
+    notify_error "No wallpaper was provided"
+    return 2
+  }
+
+  source=$(realpath "$input" 2>/dev/null || true)
+  [[ -f $source ]] || {
+    notify_error "Wallpaper does not exist: $input"
+    return 1
+  }
+
+  if ! is_video "$source" && ! is_image "$source"; then
+    notify_error "Unsupported wallpaper type: $source"
+    return 2
+  fi
+
+  ensure_dirs
+  destination="$WALLS_DIR/$(basename "$source")"
+
+  if [[ $source != "$destination" ]]; then
+    if [[ -e $destination ]]; then
+      if ! cmp -s -- "$source" "$destination"; then
+        notify_error "A different wallpaper with that name already exists: $destination"
+        return 1
+      fi
+    else
+      install -m 0644 "$source" "$destination"
+    fi
+  fi
+
+  apply_wallpaper "$destination"
+}
+
 state_value() {
   local key="$1"
   jq -r --arg key "$key" '.[$key] // empty' "$STATE_FILE" 2>/dev/null || true
@@ -532,6 +596,7 @@ main() {
     bootstrap) bootstrap ;;
     cleanup) cleanup ;;
     pick) pick_wallpaper ;;
+    add) add_wallpaper "${2:-}" ;;
     apply) apply_wallpaper "${2:-}" ;;
     reconcile|restore) reconcile ;;
     stop) stop_player; clear_state; mark_initialized ;;
