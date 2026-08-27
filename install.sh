@@ -6,6 +6,8 @@ readonly PLUGIN_ID="io.github.pulkitchauhan.motion-backgrounds"
 readonly SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly TARGET_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 readonly MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
+readonly WALLS_DIR="$HOME/.config/motion-backgrounds/walls"
+readonly DEFAULT_WALLPAPER="samurai-katana-in-forest-cinematic-4k-live-wallpaper.mp4"
 
 install_dependencies() {
   if ! command -v ffmpeg >/dev/null 2>&1; then
@@ -27,7 +29,21 @@ install_plugin_files() {
   fi
 
   chmod +x "$TARGET_DIR/install.sh" "$TARGET_DIR/bin/motion-backgrounds"
-  mkdir -p "$HOME/.config/motion-backgrounds/walls"
+  mkdir -p "$WALLS_DIR"
+}
+
+install_default_wallpaper() {
+  local source="$TARGET_DIR/assets/walls/$DEFAULT_WALLPAPER"
+  local destination="$WALLS_DIR/$DEFAULT_WALLPAPER"
+
+  [[ -f $source ]] || {
+    echo "Bundled default wallpaper is missing: $source" >&2
+    return 1
+  }
+
+  if [[ ! -e $destination ]]; then
+    install -m 0644 "$source" "$destination"
+  fi
 }
 
 install_menu_entry() {
@@ -99,12 +115,14 @@ main() {
 
   install_dependencies
   install_plugin_files
+  install_default_wallpaper
   install_menu_entry
   enable_plugin
   warn_about_old_autostart
 
   echo
   echo "Motion Backgrounds installed."
+  echo "Bundled wallpaper added: $WALLS_DIR/$DEFAULT_WALLPAPER"
   echo "Add wallpapers to: $HOME/.config/motion-backgrounds/walls/"
   echo "Open the picker with: Super+Ctrl+Space"
 }

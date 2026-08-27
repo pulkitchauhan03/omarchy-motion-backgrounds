@@ -25,7 +25,7 @@ The installer:
 
 1. Installs `ffmpeg` and `mpvpaper` if they are missing.
 2. Copies the complete plugin to `~/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/`.
-3. Creates `~/.config/motion-backgrounds/walls/`.
+3. Creates `~/.config/motion-backgrounds/walls/` and adds the bundled katana video there if it is not already present.
 4. Overrides the user-level `style.background` menu action to use the mixed-media picker.
 5. Validates, discovers, and enables the plugin without restarting the shell.
 
@@ -44,6 +44,8 @@ Add global wallpapers here:
 ```
 
 Open the picker with `Super+Ctrl+Space`, or choose **Style → Background** in the Omarchy menu. Selecting a different wallpaper takes effect immediately.
+
+The bundled `samurai-katana-in-forest-cinematic-4k-live-wallpaper.mp4` is installed into this directory by default. Re-running the installer never overwrites that file if you have replaced it.
 
 You can also put a supported video in a theme's `backgrounds/` directory. It appears only while that theme is active. A video from the global walls directory remains active across theme changes; a theme-scoped video stops when you switch away from its theme.
 
