@@ -34,7 +34,7 @@ omarchy plugin add https://github.com/pulkitchauhan03/omarchy-motion-backgrounds
 On first enable, the service automatically:
 
 1. Creates `~/.config/motion-backgrounds/walls/`.
-2. Adds the bundled katana video if that filename is absent.
+2. Adds the bundled `Katana.mp4` video if that filename is absent.
 3. Integrates the mixed-media picker with Omarchy's Background menu action.
 4. Restores a saved global live wallpaper when one exists.
 
@@ -50,7 +50,7 @@ Add global wallpapers here:
 
 Open the picker with `Super+Ctrl+Space`, or choose **Style → Background** in the Omarchy menu. Selecting a wallpaper takes effect immediately.
 
-The bundled 1080p `samurai-katana-in-forest-cinematic-4k-live-wallpaper.mp4` is installed into the global directory by default. Videos placed in a theme's `backgrounds/` directory appear only while that theme is active. A global video remains active across theme changes; a theme-scoped video stops when you switch away from its theme.
+The bundled 1080p `Katana.mp4` is installed into the global directory by default. Videos placed in a theme's `backgrounds/` directory appear only while that theme is active. A global video remains active across theme changes; a theme-scoped video stops when you switch away from its theme.
 
 ## Commands
 

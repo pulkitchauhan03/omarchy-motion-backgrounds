@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.pulkitchauhan.motion-backgrounds",
   "name": "Motion Backgrounds",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "author": "Pulkit Chauhan",
   "license": "MIT",
   "description": "A mixed image and video wallpaper picker for Omarchy.",
