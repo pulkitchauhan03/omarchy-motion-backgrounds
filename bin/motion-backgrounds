@@ -43,7 +43,8 @@ Commands:
   apply <file>     Apply an image or video immediately
   reconcile        Restore or reconcile the saved live wallpaper
   stop             Stop the live wallpaper and clear its saved state
-  list             Print picker rows as path<TAB>thumbnail
+  list             List removable wallpapers in the global library
+  list-rows        Print machine-readable picker rows
   status           Print the active live wallpaper, if any
 USAGE
 }
@@ -592,6 +593,17 @@ thumbnail_for_video() {
   fi
 }
 
+list_library() {
+  ensure_dirs
+
+  find -L "$WALLS_DIR" -maxdepth 1 -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
+       -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.bmp' \
+       -o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' \
+       -o -iname '*.mov' -o -iname '*.m4v' \) \
+    -printf '%f\n' 2>/dev/null | sort
+}
+
 list_rows() {
   ensure_dirs
 
@@ -693,7 +705,8 @@ main() {
     apply) apply_wallpaper "${2:-}" ;;
     reconcile|restore) reconcile ;;
     stop) stop_player; clear_state; mark_initialized ;;
-    list) list_rows ;;
+    list|ls) list_library ;;
+    list-rows) list_rows ;;
     status) print_status ;;
     -h|--help|help|"") usage ;;
     *) usage >&2; return 2 ;;

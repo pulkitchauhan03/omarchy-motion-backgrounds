@@ -72,8 +72,12 @@ motion-backgrounds add ~/Downloads/my-wallpaper.mp4
 Remove a wallpaper from the global library by file name or library path:
 
 ```bash
+motion-backgrounds list
 motion-backgrounds remove my-wallpaper.mp4
 ```
+
+`list` prints only the exact filenames accepted by `remove`, making the output
+easy to copy, paste, or pass to another shell command.
 
 Removal moves the file to the desktop trash, so it remains recoverable. The
 command refuses paths outside the global library and asks you to select another
@@ -109,6 +113,7 @@ motion-backgrounds-wallpaper.service
 
 ```bash
 motion-backgrounds add /path/to/new-wallpaper.mp4
+motion-backgrounds list
 motion-backgrounds remove new-wallpaper.mp4
 motion-backgrounds pick
 motion-backgrounds apply /path/to/wallpaper.mp4
