@@ -1,56 +1,80 @@
 # Motion Backgrounds
 
-Motion Backgrounds extends Omarchy's native wallpaper picker with video wallpapers while preserving normal image backgrounds.
+Motion Backgrounds adds video wallpapers to Omarchy's native full-screen wallpaper picker while preserving its normal image workflow, theme behavior, and reveal animation.
 
 ## Features
 
-- Uses the existing Omarchy full-screen wallpaper picker.
-- Supports `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `mp4`, `webm`, `mkv`, `mov`, and `m4v` files.
-- Shows generated thumbnails for videos.
-- Uses Omarchy's native reveal animation when changing images or videos.
-- Applies selections immediately without restarting Hyprland or `omarchy-shell`.
-- Restores the last global live wallpaper when the Omarchy shell starts.
-- Includes wallpapers from the current theme, including videos in its `backgrounds/` directory.
-- Makes `~/.config/motion-backgrounds/walls/` available in every theme.
+- Mixed image and video selection through Omarchy's existing wallpaper UI.
+- Immediate wallpaper changes without restarting Hyprland or `omarchy-shell`.
+- Native Omarchy reveal animation for image-to-image, image-to-video, and video-to-video changes.
+- Hardware-accelerated, silent, looping video playback through `mpvpaper`.
+- Generated and cached video thumbnails with a built-in fallback preview.
+- A global wallpaper library available under every theme.
+- Videos inside a theme's `backgrounds/` directory.
+- Automatic restoration of saved global videos after shell startup.
+- Optional live lock-screen integration with Botanical Lock.
+
+Supported images: `jpg`, `jpeg`, `png`, `webp`, `gif`, and `bmp`.
+
+Supported videos: `mp4`, `webm`, `mkv`, `mov`, and `m4v`.
 
 ## Requirements
 
-Install `mpvpaper` before enabling video playback:
+Install `mpvpaper` before using video backgrounds:
 
 ```bash
 omarchy pkg aur add mpvpaper
 ```
 
-The package brings the `mpv` and `ffmpeg` dependencies used for playback and thumbnails. If it is missing, Motion Backgrounds remains installed and shows an actionable notification instead of failing silently.
+This also provides the playback and thumbnail dependencies used by the plugin. Without `mpvpaper`, the plugin remains installed and static images continue to work, but selecting a video displays an actionable notification.
 
 ## Install
 
-Install and enable the plugin with Omarchy's official plugin manager:
+Use Omarchy's official plugin manager:
 
 ```bash
 omarchy plugin add https://github.com/pulkitchauhan03/omarchy-motion-backgrounds.git --enable
 ```
 
-On first enable, the service automatically:
+On first enable, the plugin automatically:
 
 1. Creates `~/.config/motion-backgrounds/walls/`.
-2. Adds the bundled `Katana.mp4` video if that filename is absent.
-3. Integrates the mixed-media picker with Omarchy's Background menu action.
-4. Restores a saved global live wallpaper when one exists.
+2. Installs the bundled 1080p `Katana.mp4` when it is absent.
+3. Connects Omarchy's Background menu action to the mixed-media picker.
+4. Restores a saved global video selection when one exists.
 
-The bootstrap is idempotent and runs again after plugin updates without overwriting user wallpapers.
+Bootstrap is idempotent. Plugin updates do not overwrite wallpapers already in the global library. Older installations using the previous bundled filename are migrated to `Katana.mp4` without creating a duplicate.
 
 ## Use
 
-Add global wallpapers here:
+Place wallpapers that should be available under every theme in:
 
 ```text
 ~/.config/motion-backgrounds/walls/
 ```
 
-Open the picker with `Super+Ctrl+Space`, or choose **Style → Background** in the Omarchy menu. Selecting a wallpaper takes effect immediately.
+Open the picker with `Super+Ctrl+Space`, or choose **Style → Background** from the Omarchy menu. The directories are scanned each time the picker opens, so newly added files appear without a reload or restart.
 
-The bundled 1080p `Katana.mp4` is installed into the global directory by default. Videos placed in a theme's `backgrounds/` directory appear only while that theme is active. A global video remains active across theme changes; a theme-scoped video stops when you switch away from its theme.
+### Wallpaper scope
+
+- Files in `~/.config/motion-backgrounds/walls/` are global and remain active across theme changes.
+- Files in the active theme's `backgrounds/` directory are theme-scoped.
+- A theme-scoped video stops when you switch away from the theme that owns it.
+- Static images continue through Omarchy's normal wallpaper command.
+
+### Video transitions
+
+For video selections, the plugin first passes a cached poster frame to Omarchy's wallpaper command. Omarchy performs its native reveal, then `mpvpaper` starts the video on Wayland's bottom layer. The poster also prevents an unrelated older wallpaper from flashing during video-to-video changes.
+
+Playback runs as a transient systemd user service:
+
+```text
+motion-backgrounds-wallpaper.service
+```
+
+## Botanical Lock integration
+
+[Botanical Lock](https://github.com/pulkitchauhan03/omarchy-botanical-lock) can read the saved Motion Backgrounds state and play the active video directly inside its secure lock surface. Static lock-screen backgrounds require no integration setup.
 
 ## Commands
 
@@ -59,10 +83,19 @@ controller="$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgro
 
 "$controller" pick
 "$controller" apply /path/to/wallpaper.mp4
-"$controller" stop
 "$controller" status
+"$controller" stop
+"$controller" reconcile
 "$controller" bootstrap
 "$controller" cleanup
+```
+
+## Storage
+
+```text
+~/.config/motion-backgrounds/walls/       Global wallpaper library
+~/.local/state/motion-backgrounds/        Saved live-wallpaper selection
+~/.cache/motion-backgrounds/thumbnails/   Disposable video previews
 ```
 
 ## Update
@@ -73,23 +106,18 @@ omarchy plugin update io.github.pulkitchauhan.motion-backgrounds
 
 ## Remove
 
-Run cleanup while the controller still exists, then remove the Git-managed plugin:
+Run cleanup while the controller is still installed, then use Omarchy's plugin manager:
 
 ```bash
 "$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/bin/motion-backgrounds" cleanup
 omarchy plugin remove io.github.pulkitchauhan.motion-backgrounds
 ```
 
-Cleanup removes the menu override, player service, saved live-wallpaper state, and generated thumbnails. It preserves `~/.config/motion-backgrounds/walls/` and every wallpaper in it.
+Cleanup stops playback and removes the menu override, saved state, and thumbnail cache. It deliberately preserves `~/.config/motion-backgrounds/walls/` and every wallpaper stored there.
 
-## Storage
+## Troubleshooting
 
-```text
-~/.config/motion-backgrounds/walls/       Global wallpaper library
-~/.local/state/motion-backgrounds/        Current live-wallpaper selection
-~/.cache/motion-backgrounds/thumbnails/   Disposable video thumbnails
-```
-
-Video playback runs through `mpvpaper` in a transient systemd user service on the Wayland `bottom` layer. During a change, the cached video thumbnail acts as a handoff frame so Omarchy can complete its native reveal before live playback begins.
-
-Remove any separate `mpvpaper` autostart entry before using this plugin to avoid competing wallpaper processes.
+- Remove separate `mpvpaper` autostart commands before enabling this plugin; competing processes can cover one another.
+- Confirm the plugin is enabled with `omarchy plugin list`.
+- Check live playback with `systemctl --user status motion-backgrounds-wallpaper.service`.
+- Run the controller's `status` command to print the saved active-video path.
