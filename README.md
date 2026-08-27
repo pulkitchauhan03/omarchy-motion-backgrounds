@@ -50,7 +50,7 @@ Add global wallpapers here:
 
 Open the picker with `Super+Ctrl+Space`, or choose **Style → Background** in the Omarchy menu. Selecting a wallpaper takes effect immediately.
 
-The bundled `samurai-katana-in-forest-cinematic-4k-live-wallpaper.mp4` is installed into the global directory by default. Videos placed in a theme's `backgrounds/` directory appear only while that theme is active. A global video remains active across theme changes; a theme-scoped video stops when you switch away from its theme.
+The bundled 1080p `samurai-katana-in-forest-cinematic-4k-live-wallpaper.mp4` is installed into the global directory by default. Videos placed in a theme's `backgrounds/` directory appear only while that theme is active. A global video remains active across theme changes; a theme-scoped video stops when you switch away from its theme.
 
 ## Commands
 
