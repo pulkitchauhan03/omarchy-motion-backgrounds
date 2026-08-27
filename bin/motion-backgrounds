@@ -16,6 +16,7 @@ readonly CURRENT_THEME_NAME_FILE="$HOME/.local/state/omarchy/current/theme.name"
 readonly CURRENT_BACKGROUND_LINK="$HOME/.local/state/omarchy/current/background"
 readonly FALLBACK_THUMBNAIL="$CONFIG_HOME/omarchy/plugins/$PLUGIN_ID/assets/video.svg"
 readonly BACKGROUND_TRANSITION_SECONDS="0.46"
+readonly PLAYER_UNIT="motion-backgrounds-wallpaper.service"
 
 usage() {
   cat <<'USAGE'
@@ -63,6 +64,7 @@ ensure_dirs() {
 }
 
 stop_player() {
+  systemctl --user stop "$PLAYER_UNIT" >/dev/null 2>&1 || true
   pkill -x mpvpaper 2>/dev/null || true
 
   local attempt
@@ -106,14 +108,31 @@ write_state() {
 
 start_player() {
   local path="$1"
+  local player attempt
 
-  command -v mpvpaper >/dev/null 2>&1 || {
+  player=$(command -v mpvpaper 2>/dev/null || true)
+  [[ -n $player ]] || {
     notify_error "mpvpaper is not installed"
     return 1
   }
 
   stop_player
-  mpvpaper -f -l bottom -p -o "no-audio loop hwdec=auto" ALL "$path"
+  systemd-run --user --quiet --collect \
+    --unit="${PLAYER_UNIT%.service}" \
+    --property=Type=simple \
+    --property=Restart=on-failure \
+    --property=RestartSec=1s \
+    -- "$player" -l bottom -p -o "no-audio loop hwdec=auto" ALL "$path"
+
+  for attempt in {1..20}; do
+    if systemctl --user is-active --quiet "$PLAYER_UNIT" && pgrep -x mpvpaper >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.05
+  done
+
+  notify_error "mpvpaper did not stay running"
+  return 1
 }
 
 active_live_path() {
