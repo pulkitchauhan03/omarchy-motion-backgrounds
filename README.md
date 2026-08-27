@@ -7,6 +7,7 @@ Motion Backgrounds extends Omarchy's native wallpaper picker with video wallpape
 - Uses the existing Omarchy full-screen wallpaper picker.
 - Supports `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `mp4`, `webm`, `mkv`, `mov`, and `m4v` files.
 - Shows generated thumbnails for videos.
+- Uses Omarchy's native reveal animation when changing images or videos.
 - Applies image and video selections immediately without restarting Hyprland or `omarchy-shell`.
 - Restores the last global live wallpaper when the Omarchy shell starts.
 - Includes wallpapers from the current theme, including video files placed in its `backgrounds/` directory.
@@ -65,7 +66,7 @@ The controller is installed with the plugin:
 ~/.cache/motion-backgrounds/thumbnails/   Disposable video thumbnails
 ```
 
-The plugin runs video wallpapers through `mpvpaper` on the Wayland `bottom` layer, above Omarchy's static background and below application windows.
+The plugin runs video wallpapers through `mpvpaper` on the Wayland `bottom` layer, above Omarchy's static background and below application windows. During a change, it uses the video's cached thumbnail as a handoff frame so Omarchy can complete its native reveal before live playback begins.
 
 ## Existing mpvpaper autostart entries
 

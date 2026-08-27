@@ -15,6 +15,7 @@ readonly CURRENT_THEME_DIR="$HOME/.local/state/omarchy/current/theme/backgrounds
 readonly CURRENT_THEME_NAME_FILE="$HOME/.local/state/omarchy/current/theme.name"
 readonly CURRENT_BACKGROUND_LINK="$HOME/.local/state/omarchy/current/background"
 readonly FALLBACK_THUMBNAIL="$CONFIG_HOME/omarchy/plugins/$PLUGIN_ID/assets/video.svg"
+readonly BACKGROUND_TRANSITION_SECONDS="0.46"
 
 usage() {
   cat <<'USAGE'
@@ -115,9 +116,45 @@ start_player() {
   mpvpaper -f -l bottom -p -o "no-audio loop hwdec=auto" ALL "$path"
 }
 
+active_live_path() {
+  [[ -s $STATE_FILE ]] || return 0
+
+  local path
+  path=$(state_value path)
+  if [[ -n $path && -f $path ]] && is_video "$path"; then
+    printf '%s' "$path"
+  fi
+}
+
+prepare_live_handoff() {
+  local path poster
+
+  if pgrep -x mpvpaper >/dev/null 2>&1; then
+    path=$(active_live_path)
+    if [[ -n $path ]]; then
+      poster=$(thumbnail_for_video "$path")
+      if [[ -n $poster && -f $poster ]]; then
+        # Prime Omarchy's background beneath mpvpaper before removing the live
+        # surface. This keeps video-to-video and video-to-image transitions
+        # from briefly exposing an unrelated older wallpaper.
+        omarchy-shell -q background setInstant "$poster" >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
+
+  stop_player
+}
+
+set_animated_backdrop() {
+  local path="$1"
+
+  omarchy-theme-bg-set "$path"
+  sleep "$BACKGROUND_TRANSITION_SECONDS"
+}
+
 set_live() {
   local input="$1"
-  local path scope theme
+  local path scope theme poster current
 
   path=$(realpath "$input" 2>/dev/null || true)
   [[ -f $path ]] || {
@@ -131,6 +168,19 @@ set_live() {
     theme=$(active_theme_name)
   fi
 
+  current=$(active_live_path)
+  if [[ $current == "$path" ]] && pgrep -x mpvpaper >/dev/null 2>&1; then
+    return 0
+  fi
+
+  poster=$(thumbnail_for_video "$path")
+  [[ -n $poster && -f $poster ]] || {
+    notify_error "Could not create a preview for: $path"
+    return 1
+  }
+
+  prepare_live_handoff
+  set_animated_backdrop "$poster"
   start_player "$path"
   write_state "$path" "$scope" "$theme"
 }
@@ -145,7 +195,7 @@ set_static() {
     return 1
   }
 
-  stop_player
+  prepare_live_handoff
   clear_state
   omarchy-theme-bg-set "$path"
 }
