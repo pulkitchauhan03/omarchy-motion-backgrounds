@@ -15,17 +15,14 @@ Item {
   }
 
   function bootstrap() {
-    if (!bootstrapProcess.running) bootstrapProcess.running = true
+    // The first clone triggers Omarchy's plugin file watcher. Run bootstrap
+    // detached so that an immediate shell/plugin reload cannot terminate it.
+    Quickshell.execDetached([root.controller, "bootstrap"])
+    bootstrapReconcile.restart()
   }
 
   function openPicker() {
     if (!pickerProcess.running) pickerProcess.running = true
-  }
-
-  Process {
-    id: bootstrapProcess
-    command: [root.controller, "bootstrap"]
-    onExited: root.reconcile()
   }
 
   Process {
@@ -49,6 +46,13 @@ Item {
 
   Component.onCompleted: root.bootstrap()
 
+  Timer {
+    id: bootstrapReconcile
+    interval: 1000
+    repeat: false
+    onTriggered: root.reconcile()
+  }
+
   IpcHandler {
     target: "motion-backgrounds"
 
@@ -58,6 +62,10 @@ Item {
 
     function reconcile(): void {
       root.reconcile()
+    }
+
+    function bootstrap(): void {
+      root.bootstrap()
     }
   }
 }
