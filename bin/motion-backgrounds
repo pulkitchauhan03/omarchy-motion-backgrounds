@@ -1,0 +1,338 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly PLUGIN_ID="io.github.pulkitchauhan.motion-backgrounds"
+readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+readonly STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+readonly CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+readonly CONFIG_DIR="$CONFIG_HOME/motion-backgrounds"
+readonly WALLS_DIR="$CONFIG_DIR/walls"
+readonly STATE_DIR="$STATE_HOME/motion-backgrounds"
+readonly STATE_FILE="$STATE_DIR/current.json"
+readonly CACHE_DIR="$CACHE_HOME/motion-backgrounds/thumbnails"
+readonly CURRENT_THEME_DIR="$HOME/.local/state/omarchy/current/theme/backgrounds"
+readonly CURRENT_THEME_NAME_FILE="$HOME/.local/state/omarchy/current/theme.name"
+readonly CURRENT_BACKGROUND_LINK="$HOME/.local/state/omarchy/current/background"
+readonly FALLBACK_THUMBNAIL="$CONFIG_HOME/omarchy/plugins/$PLUGIN_ID/assets/video.svg"
+
+usage() {
+  cat <<'USAGE'
+Usage: motion-backgrounds <command> [argument]
+
+Commands:
+  pick             Open the mixed image/video wallpaper picker
+  apply <file>     Apply an image or video immediately
+  reconcile        Restore or reconcile the saved live wallpaper
+  stop             Stop the live wallpaper and clear its saved state
+  list             Print picker rows as path<TAB>thumbnail
+  status           Print the active live wallpaper, if any
+USAGE
+}
+
+notify_error() {
+  local message="$1"
+  if command -v omarchy-notification-send >/dev/null 2>&1; then
+    omarchy-notification-send "Motion Backgrounds" "$message" -t 4000 >/dev/null 2>&1 || true
+  fi
+  printf 'motion-backgrounds: %s\n' "$message" >&2
+}
+
+lower_extension() {
+  local name="${1##*.}"
+  printf '%s' "${name,,}"
+}
+
+is_video() {
+  case "$(lower_extension "$1")" in
+    mp4|webm|mkv|mov|m4v) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_image() {
+  case "$(lower_extension "$1")" in
+    jpg|jpeg|png|webp|gif|bmp) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+ensure_dirs() {
+  mkdir -p "$WALLS_DIR" "$STATE_DIR" "$CACHE_DIR"
+}
+
+stop_player() {
+  pkill -x mpvpaper 2>/dev/null || true
+
+  local attempt
+  for attempt in {1..20}; do
+    pgrep -x mpvpaper >/dev/null 2>&1 || return 0
+    sleep 0.05
+  done
+}
+
+clear_state() {
+  rm -f "$STATE_FILE"
+}
+
+active_theme_name() {
+  if [[ -f $CURRENT_THEME_NAME_FILE ]]; then
+    tr -d '\n' <"$CURRENT_THEME_NAME_FILE"
+  fi
+}
+
+wallpaper_scope() {
+  local path="$1"
+  case "$path" in
+    "$WALLS_DIR"/*) printf 'global' ;;
+    *) printf 'theme' ;;
+  esac
+}
+
+write_state() {
+  local path="$1"
+  local scope="$2"
+  local theme="$3"
+  local temporary="$STATE_FILE.tmp.$$"
+
+  jq -n \
+    --arg path "$path" \
+    --arg scope "$scope" \
+    --arg theme "$theme" \
+    '{path: $path, scope: $scope, theme: $theme}' >"$temporary"
+  mv -f "$temporary" "$STATE_FILE"
+}
+
+start_player() {
+  local path="$1"
+
+  command -v mpvpaper >/dev/null 2>&1 || {
+    notify_error "mpvpaper is not installed"
+    return 1
+  }
+
+  stop_player
+  mpvpaper -f -l bottom -p -o "no-audio loop hwdec=auto" ALL "$path"
+}
+
+set_live() {
+  local input="$1"
+  local path scope theme
+
+  path=$(realpath "$input" 2>/dev/null || true)
+  [[ -f $path ]] || {
+    notify_error "Wallpaper does not exist: $input"
+    return 1
+  }
+
+  scope=$(wallpaper_scope "$path")
+  theme=""
+  if [[ $scope == theme ]]; then
+    theme=$(active_theme_name)
+  fi
+
+  start_player "$path"
+  write_state "$path" "$scope" "$theme"
+}
+
+set_static() {
+  local input="$1"
+  local path
+
+  path=$(realpath "$input" 2>/dev/null || true)
+  [[ -f $path ]] || {
+    notify_error "Wallpaper does not exist: $input"
+    return 1
+  }
+
+  stop_player
+  clear_state
+  omarchy-theme-bg-set "$path"
+}
+
+apply_wallpaper() {
+  local path="${1:-}"
+  [[ -n $path ]] || {
+    notify_error "No wallpaper was selected"
+    return 2
+  }
+
+  if is_video "$path"; then
+    set_live "$path"
+  elif is_image "$path"; then
+    set_static "$path"
+  else
+    notify_error "Unsupported wallpaper type: $path"
+    return 2
+  fi
+}
+
+state_value() {
+  local key="$1"
+  jq -r --arg key "$key" '.[$key] // empty' "$STATE_FILE" 2>/dev/null || true
+}
+
+reconcile() {
+  ensure_dirs
+  [[ -s $STATE_FILE ]] || return 0
+
+  local path scope saved_theme current_theme
+  path=$(state_value path)
+  scope=$(state_value scope)
+  saved_theme=$(state_value theme)
+
+  if [[ -z $path || ! -f $path ]]; then
+    stop_player
+    clear_state
+    return 0
+  fi
+
+  if [[ $scope == theme ]]; then
+    current_theme=$(active_theme_name)
+    if [[ -z $saved_theme || $saved_theme != "$current_theme" ]]; then
+      stop_player
+      clear_state
+      return 0
+    fi
+  fi
+
+  pgrep -x mpvpaper >/dev/null 2>&1 || start_player "$path"
+}
+
+thumbnail_for_video() {
+  local video="$1"
+  local signature hash thumbnail temporary
+
+  signature=$(stat -Lc '%s:%Y' "$video") || return 1
+  hash=$(printf '%s\t%s' "$video" "$signature" | md5sum | cut -d ' ' -f 1)
+  thumbnail="$CACHE_DIR/$hash.jpg"
+
+  if [[ ! -s $thumbnail ]]; then
+    temporary="$thumbnail.tmp.$$.jpg"
+    if ffmpeg -hide_banner -loglevel error -y \
+      -ss 1 -i "$video" -frames:v 1 \
+      -vf "scale=1536:864:force_original_aspect_ratio=decrease,pad=1536:864:(ow-iw)/2:(oh-ih)/2" \
+      "$temporary"; then
+      mv -f "$temporary" "$thumbnail"
+    else
+      rm -f "$temporary"
+    fi
+  fi
+
+  if [[ -s $thumbnail ]]; then
+    printf '%s' "$thumbnail"
+  else
+    printf '%s' "$FALLBACK_THUMBNAIL"
+  fi
+}
+
+list_rows() {
+  ensure_dirs
+
+  local theme_name user_theme_dir directory wallpaper thumbnail
+  local -a directories
+
+  theme_name=$(active_theme_name)
+  user_theme_dir="$HOME/.config/omarchy/backgrounds/$theme_name"
+  directories=("$CURRENT_THEME_DIR" "$user_theme_dir" "$WALLS_DIR")
+
+  for directory in "${directories[@]}"; do
+    [[ -d $directory ]] || continue
+
+    while IFS= read -r -d '' wallpaper; do
+      if is_video "$wallpaper"; then
+        thumbnail=$(thumbnail_for_video "$wallpaper")
+      elif is_image "$wallpaper"; then
+        thumbnail="$wallpaper"
+      else
+        continue
+      fi
+
+      printf '%s\t%s\n' "$wallpaper" "$thumbnail"
+    done < <(
+      find -L "$directory" -maxdepth 1 -type f \
+        \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
+           -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.bmp' \
+           -o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' \
+           -o -iname '*.mov' -o -iname '*.m4v' \) \
+        -print0 2>/dev/null | sort -z
+    )
+  done
+}
+
+selected_wallpaper() {
+  local saved_path
+  if [[ -s $STATE_FILE ]]; then
+    saved_path=$(state_value path)
+    if [[ -f $saved_path ]]; then
+      printf '%s' "$saved_path"
+      return 0
+    fi
+  fi
+
+  readlink -f "$CURRENT_BACKGROUND_LINK" 2>/dev/null || true
+}
+
+pick_wallpaper() {
+  ensure_dirs
+  command -v ffmpeg >/dev/null 2>&1 || {
+    notify_error "ffmpeg is required to preview video wallpapers"
+    return 1
+  }
+
+  local rows rows_b64 selected open_result choice
+  rows=$(list_rows)
+  [[ -n $rows ]] || {
+    notify_error "No wallpapers found in the current theme or $WALLS_DIR"
+    return 1
+  }
+
+  rows_b64=$(printf '%s' "$rows" | base64 -w 0)
+  selected=$(selected_wallpaper)
+  PICK_SELECTION_FILE=$(mktemp)
+  PICK_DONE_FILE=$(mktemp)
+  rm -f "$PICK_DONE_FILE"
+  trap 'rm -f "${PICK_SELECTION_FILE:-}" "${PICK_DONE_FILE:-}"' EXIT
+
+  open_result=$(omarchy-shell image-selector open \
+    "" "$rows_b64" "$selected" "$PICK_SELECTION_FILE" "$PICK_DONE_FILE" true true) || {
+      notify_error "Omarchy's image picker did not accept the request"
+      return 1
+    }
+
+  [[ $open_result == ok ]] || {
+    notify_error "Omarchy's image picker returned: $open_result"
+    return 1
+  }
+
+  while [[ ! -e $PICK_DONE_FILE ]]; do
+    sleep 0.02
+  done
+
+  if [[ -s $PICK_SELECTION_FILE ]]; then
+    choice=$(<"$PICK_SELECTION_FILE")
+    apply_wallpaper "$choice"
+  fi
+}
+
+print_status() {
+  [[ -s $STATE_FILE ]] || return 0
+  state_value path
+}
+
+main() {
+  ensure_dirs
+
+  case "${1:-}" in
+    pick) pick_wallpaper ;;
+    apply) apply_wallpaper "${2:-}" ;;
+    reconcile|restore) reconcile ;;
+    stop) stop_player; clear_state ;;
+    list) list_rows ;;
+    status) print_status ;;
+    -h|--help|help|"") usage ;;
+    *) usage >&2; return 2 ;;
+  esac
+}
+
+main "$@"

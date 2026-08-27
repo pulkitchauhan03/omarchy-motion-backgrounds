@@ -1,0 +1,8 @@
+  // motion-backgrounds:start
+  "style.background": {
+    "icon": "",
+    "label": "Background",
+    "aliases": ["background", "wallpaper"],
+    "action": "\"$HOME/.config/omarchy/plugins/io.github.pulkitchauhan.motion-backgrounds/bin/motion-backgrounds\" pick"
+  },
+  // motion-backgrounds:end

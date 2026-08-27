@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.pulkitchauhan.motion-backgrounds",
+  "name": "Motion Backgrounds",
+  "version": "0.1.0",
+  "author": "Pulkit Chauhan",
+  "license": "MIT",
+  "description": "A mixed image and video wallpaper picker for Omarchy.",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
