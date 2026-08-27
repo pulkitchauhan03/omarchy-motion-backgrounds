@@ -11,6 +11,8 @@ readonly CONFIG_DIR="$CONFIG_HOME/motion-backgrounds"
 readonly WALLS_DIR="$CONFIG_DIR/walls"
 readonly STATE_DIR="$STATE_HOME/motion-backgrounds"
 readonly STATE_FILE="$STATE_DIR/current.json"
+readonly INITIALIZED_FILE="$STATE_DIR/initialized"
+readonly DEFAULT_PENDING_FILE="$STATE_DIR/activate-default-pending"
 readonly CACHE_DIR="$CACHE_HOME/motion-backgrounds/thumbnails"
 readonly CURRENT_THEME_DIR="$HOME/.local/state/omarchy/current/theme/backgrounds"
 readonly CURRENT_THEME_NAME_FILE="$HOME/.local/state/omarchy/current/theme.name"
@@ -163,10 +165,30 @@ check_dependencies() {
 }
 
 bootstrap() {
+  local default_wallpaper="$WALLS_DIR/$DEFAULT_WALLPAPER_NAME"
+
   ensure_dirs
+
+  # Only queue automatic activation when bootstrap is installing Katana for
+  # the first time. Existing installations may intentionally have no live
+  # state because the user selected a static wallpaper.
+  if [[ ! -e $INITIALIZED_FILE && ! -e $DEFAULT_PENDING_FILE && ! -e $default_wallpaper ]]; then
+    : >"$DEFAULT_PENDING_FILE"
+  fi
+
   install_default_wallpaper
   install_menu_entry
-  check_dependencies || true
+
+  if [[ -e $DEFAULT_PENDING_FILE ]]; then
+    # Keep the pending marker when mpvpaper is unavailable. A later bootstrap
+    # will finish first-run activation after the dependency is installed.
+    if check_dependencies; then
+      set_live "$default_wallpaper" || true
+    fi
+  else
+    mark_initialized
+    check_dependencies || true
+  fi
 }
 
 cleanup() {
@@ -188,6 +210,11 @@ stop_player() {
 
 clear_state() {
   rm -f "$STATE_FILE"
+}
+
+mark_initialized() {
+  rm -f "$DEFAULT_PENDING_FILE"
+  : >"$INITIALIZED_FILE"
 }
 
 active_theme_name() {
@@ -314,6 +341,7 @@ set_live() {
   set_animated_backdrop "$poster"
   start_player "$path"
   write_state "$path" "$scope" "$theme"
+  mark_initialized
 }
 
 set_static() {
@@ -329,6 +357,7 @@ set_static() {
   prepare_live_handoff
   clear_state
   omarchy-theme-bg-set "$path"
+  mark_initialized
 }
 
 apply_wallpaper() {
@@ -505,7 +534,7 @@ main() {
     pick) pick_wallpaper ;;
     apply) apply_wallpaper "${2:-}" ;;
     reconcile|restore) reconcile ;;
-    stop) stop_player; clear_state ;;
+    stop) stop_player; clear_state; mark_initialized ;;
     list) list_rows ;;
     status) print_status ;;
     -h|--help|help|"") usage ;;
@@ -513,4 +542,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi

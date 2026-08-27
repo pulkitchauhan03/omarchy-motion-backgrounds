@@ -40,10 +40,17 @@ On first enable, the plugin automatically:
 
 1. Creates `~/.config/motion-backgrounds/walls/`.
 2. Installs the bundled 1080p `Katana.mp4` when it is absent.
-3. Connects Omarchy's Background menu action to the mixed-media picker.
-4. Restores a saved global video selection when one exists.
+3. Activates Katana as the initial live wallpaper and writes
+   `~/.local/state/motion-backgrounds/current.json`.
+4. Connects Omarchy's Background menu action to the mixed-media picker.
+5. Restores a saved global video selection when one exists.
 
-Bootstrap is idempotent. Plugin updates do not overwrite wallpapers already in the global library. Older installations using the previous bundled filename are migrated to `Katana.mp4` without creating a duplicate.
+Bootstrap is idempotent. Automatic Katana activation is limited to a genuinely
+fresh installation, so plugin updates and later static-wallpaper selections are
+not overridden. If `mpvpaper` is initially unavailable, activation remains
+pending and completes on a later bootstrap after the dependency is installed.
+Older installations using the previous bundled filename are migrated to
+`Katana.mp4` without creating a duplicate.
 
 ## Use
 
