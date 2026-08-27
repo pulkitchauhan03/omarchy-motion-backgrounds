@@ -69,6 +69,17 @@ immediately, run:
 motion-backgrounds add ~/Downloads/my-wallpaper.mp4
 ```
 
+Remove a wallpaper from the global library by file name or library path:
+
+```bash
+motion-backgrounds remove my-wallpaper.mp4
+```
+
+Removal moves the file to the desktop trash, so it remains recoverable. The
+command refuses paths outside the global library and asks you to select another
+wallpaper before removing an active static image. Removing an active video
+stops playback safely and clears its saved lock-screen state.
+
 Bootstrap installs the short `motion-backgrounds` command in `~/.local/bin`.
 If another file already owns that command name, the plugin leaves it untouched
 and reports the conflict.
@@ -98,6 +109,7 @@ motion-backgrounds-wallpaper.service
 
 ```bash
 motion-backgrounds add /path/to/new-wallpaper.mp4
+motion-backgrounds remove new-wallpaper.mp4
 motion-backgrounds pick
 motion-backgrounds apply /path/to/wallpaper.mp4
 motion-backgrounds status

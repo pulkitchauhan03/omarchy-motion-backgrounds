@@ -16,6 +16,7 @@ readonly STATE_DIR="$STATE_HOME/motion-backgrounds"
 readonly STATE_FILE="$STATE_DIR/current.json"
 readonly INITIALIZED_FILE="$STATE_DIR/initialized"
 readonly DEFAULT_PENDING_FILE="$STATE_DIR/activate-default-pending"
+readonly DEFAULT_REMOVED_FILE="$STATE_DIR/default-removed"
 readonly CACHE_DIR="$CACHE_HOME/motion-backgrounds/thumbnails"
 readonly CURRENT_THEME_DIR="$HOME/.local/state/omarchy/current/theme/backgrounds"
 readonly CURRENT_THEME_NAME_FILE="$HOME/.local/state/omarchy/current/theme.name"
@@ -38,6 +39,7 @@ Commands:
   cleanup          Remove integration, state, and cache (keeps wallpapers)
   pick             Open the mixed image/video wallpaper picker
   add <file>       Copy a wallpaper into the global library and activate it
+  remove <file>    Move a global wallpaper to the trash
   apply <file>     Apply an image or video immediately
   reconcile        Restore or reconcile the saved live wallpaper
   stop             Stop the live wallpaper and clear its saved state
@@ -92,6 +94,8 @@ install_default_wallpaper() {
   local destination="$WALLS_DIR/$DEFAULT_WALLPAPER_NAME"
   local legacy_destination="$WALLS_DIR/$LEGACY_DEFAULT_WALLPAPER_NAME"
   local saved_path scope theme
+
+  [[ ! -e $DEFAULT_REMOVED_FILE ]] || return 0
 
   [[ -f $BUNDLED_WALLPAPER ]] || {
     notify_error "Bundled wallpaper is missing"
@@ -438,7 +442,95 @@ add_wallpaper() {
     fi
   fi
 
+  if [[ $destination == "$WALLS_DIR/$DEFAULT_WALLPAPER_NAME" ]]; then
+    rm -f "$DEFAULT_REMOVED_FILE"
+  fi
+
   apply_wallpaper "$destination"
+}
+
+resolve_library_wallpaper() {
+  local input="$1"
+  local path
+
+  if [[ -f $input ]]; then
+    path=$(realpath "$input" 2>/dev/null || true)
+  else
+    path=$(realpath "$WALLS_DIR/$input" 2>/dev/null || true)
+  fi
+
+  [[ -f $path ]] || return 1
+  case "$path" in
+    "$WALLS_DIR"/*) printf '%s' "$path" ;;
+    *) return 2 ;;
+  esac
+}
+
+thumbnail_cache_path() {
+  local video="$1"
+  local signature hash
+
+  signature=$(stat -Lc '%s:%Y' "$video" 2>/dev/null) || return 0
+  hash=$(printf '%s\t%s' "$video" "$signature" | md5sum | cut -d ' ' -f 1)
+  printf '%s/%s.jpg' "$CACHE_DIR" "$hash"
+}
+
+trash_file() {
+  gio trash -- "$1"
+}
+
+remove_wallpaper() {
+  local input="${1:-}"
+  local path active current_background cached_thumbnail=""
+
+  [[ -n $input ]] || {
+    notify_error "No wallpaper was provided"
+    return 2
+  }
+
+  path=$(resolve_library_wallpaper "$input") || {
+    notify_error "Wallpaper is not in the global library: $input"
+    return 1
+  }
+
+  active=$(active_live_path)
+  current_background=$(readlink -f "$CURRENT_BACKGROUND_LINK" 2>/dev/null || true)
+
+  if [[ $current_background == "$path" && $active != "$path" ]]; then
+    notify_error "Select another wallpaper before removing the active static wallpaper"
+    return 1
+  fi
+
+  if is_video "$path"; then
+    cached_thumbnail=$(thumbnail_cache_path "$path")
+  fi
+
+  if [[ $active == "$path" ]]; then
+    prepare_live_handoff
+  fi
+
+  if ! trash_file "$path"; then
+    if [[ $active == "$path" ]]; then
+      start_player "$path" || true
+    fi
+    notify_error "Could not move wallpaper to the trash: $path"
+    return 1
+  fi
+
+  if [[ $active == "$path" ]]; then
+    clear_state
+    mark_initialized
+  fi
+
+  if [[ $path == "$WALLS_DIR/$DEFAULT_WALLPAPER_NAME" ]]; then
+    : >"$DEFAULT_REMOVED_FILE"
+  fi
+
+  if [[ -n $cached_thumbnail ]]; then
+    rm -f "$cached_thumbnail"
+  fi
+
+  printf 'Moved to trash: %s\n' "$path"
 }
 
 state_value() {
@@ -597,6 +689,7 @@ main() {
     cleanup) cleanup ;;
     pick) pick_wallpaper ;;
     add) add_wallpaper "${2:-}" ;;
+    remove|rm) remove_wallpaper "${2:-}" ;;
     apply) apply_wallpaper "${2:-}" ;;
     reconcile|restore) reconcile ;;
     stop) stop_player; clear_state; mark_initialized ;;
