@@ -45,7 +45,7 @@ omarchy plugin add https://github.com/pulkitchauhan03/omarchy-motion-backgrounds
 On first enable, the plugin automatically:
 
 1. Creates `~/.config/motion-backgrounds/walls/`.
-2. Installs the bundled 1080p `Katana.mp4` when it is absent.
+2. Installs the bundled wallpaper library: 1080p `Katana.mp4` plus 37 qylock-inspired animated backgrounds.
 3. Activates Katana as the initial live wallpaper and writes
    `~/.local/state/motion-backgrounds/current.json`.
 4. Connects Omarchy's Background menu action to the mixed-media picker.
@@ -56,7 +56,8 @@ fresh installation, so plugin updates and later static-wallpaper selections are
 not overridden. If Qt Multimedia is initially unavailable, activation remains
 pending and completes on a later bootstrap after the dependency is installed.
 Older installations using the previous bundled filename are migrated to
-`Katana.mp4` without creating a duplicate.
+`Katana.mp4` without creating a duplicate. The expanded bundled collection is
+copied once per installation; after that, wallpapers you remove stay removed.
 
 ## Use
 

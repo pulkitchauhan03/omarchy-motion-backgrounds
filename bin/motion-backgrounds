@@ -3,7 +3,8 @@
 set -euo pipefail
 
 readonly PLUGIN_ID="io.github.pulkitchauhan.motion-backgrounds"
-readonly PLUGIN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+readonly PLUGIN_DIR="$(cd -- "$(dirname -- "$SCRIPT_PATH")/.." && pwd)"
 readonly CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 readonly STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 readonly CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
@@ -25,7 +26,9 @@ readonly MENU_FILE="$CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc"
 readonly MENU_ENTRY="$PLUGIN_DIR/assets/menu-entry.jsonc"
 readonly DEFAULT_WALLPAPER_NAME="Katana.mp4"
 readonly LEGACY_DEFAULT_WALLPAPER_NAME="samurai-katana-in-forest-cinematic-4k-live-wallpaper.mp4"
-readonly BUNDLED_WALLPAPER="$PLUGIN_DIR/assets/walls/$DEFAULT_WALLPAPER_NAME"
+readonly BUNDLED_WALLS_DIR="$PLUGIN_DIR/assets/walls"
+readonly BUNDLED_WALLPAPER="$BUNDLED_WALLS_DIR/$DEFAULT_WALLPAPER_NAME"
+readonly BUNDLED_WALLPAPERS_INSTALLED_FILE="$STATE_DIR/bundled-wallpapers-v1-installed"
 readonly FALLBACK_THUMBNAIL="$PLUGIN_DIR/assets/video.svg"
 readonly BACKGROUND_TRANSITION_SECONDS="0.46"
 
@@ -119,6 +122,33 @@ install_default_wallpaper() {
       stop_player
     fi
   fi
+}
+
+install_bundled_wallpapers() {
+  local source destination name
+
+  # Install the expanded bundled library once. This gives existing users the
+  # new collection on update, while ensuring a wallpaper deliberately removed
+  # later is never silently restored by a subsequent bootstrap.
+  [[ -e $BUNDLED_WALLPAPERS_INSTALLED_FILE ]] && return 0
+
+  [[ -d $BUNDLED_WALLS_DIR ]] || {
+    notify_error "Bundled wallpaper directory is missing"
+    return 1
+  }
+
+  while IFS= read -r -d '' source; do
+    name=$(basename "$source")
+    [[ $name == "$DEFAULT_WALLPAPER_NAME" ]] && continue
+    destination="$WALLS_DIR/$name"
+    [[ -e $destination ]] || install -m 0644 "$source" "$destination"
+  done < <(
+    find "$BUNDLED_WALLS_DIR" -maxdepth 1 -type f \
+      \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' \
+         -o -iname '*.mov' -o -iname '*.m4v' \) -print0 | sort -z
+  )
+
+  : >"$BUNDLED_WALLPAPERS_INSTALLED_FILE"
 }
 
 install_menu_entry() {
@@ -224,6 +254,7 @@ bootstrap() {
   fi
 
   install_default_wallpaper
+  install_bundled_wallpapers
   install_menu_entry
   install_cli
 
