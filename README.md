@@ -7,7 +7,9 @@ Motion Backgrounds adds video wallpapers to Omarchy's native full-screen wallpap
 - Mixed image and video selection through Omarchy's existing wallpaper UI.
 - Immediate wallpaper changes without restarting Hyprland or `omarchy-shell`.
 - Native Omarchy reveal animation for image-to-image, image-to-video, and video-to-video changes.
-- Hardware-accelerated, silent, looping video playback through `mpvpaper`.
+- Silent, looping video playback with automatic hardware acceleration when
+  supported, using Omarchy's signed Arch packages: Quickshell, Qt Multimedia,
+  and FFmpeg.
 - Generated and cached video thumbnails with a built-in fallback preview.
 - A global wallpaper library available under every theme.
 - Videos inside a theme's `backgrounds/` directory.
@@ -20,13 +22,17 @@ Supported videos: `mp4`, `webm`, `mkv`, `mov`, and `m4v`.
 
 ## Requirements
 
-Install `mpvpaper` before using video backgrounds:
+Motion Backgrounds uses only packages from Arch's signed repositories. On a
+standard Omarchy installation they are already present. If needed, install:
 
 ```bash
-omarchy pkg aur add mpvpaper
+omarchy pkg add qt6-multimedia-ffmpeg ffmpeg
 ```
 
-This also provides the playback and thumbnail dependencies used by the plugin. Without `mpvpaper`, the plugin remains installed and static images continue to work, but selecting a video displays an actionable notification.
+`qt6-multimedia-ffmpeg` installs Arch's Qt Multimedia module and its FFmpeg
+playback backend. `ffmpeg` generates picker thumbnails. If either is
+unavailable, static images continue to work and selecting a video displays an
+actionable notification.
 
 ## Install
 
@@ -47,7 +53,7 @@ On first enable, the plugin automatically:
 
 Bootstrap is idempotent. Automatic Katana activation is limited to a genuinely
 fresh installation, so plugin updates and later static-wallpaper selections are
-not overridden. If `mpvpaper` is initially unavailable, activation remains
+not overridden. If Qt Multimedia is initially unavailable, activation remains
 pending and completes on a later bootstrap after the dependency is installed.
 Older installations using the previous bundled filename are migrated to
 `Katana.mp4` without creating a duplicate.
@@ -97,13 +103,15 @@ and reports the conflict.
 
 ### Video transitions
 
-For video selections, the plugin first passes a cached poster frame to Omarchy's wallpaper command. Omarchy performs its native reveal, then `mpvpaper` starts the video on Wayland's bottom layer. The poster also prevents an unrelated older wallpaper from flashing during video-to-video changes.
+For video selections, the plugin first passes a cached poster frame to Omarchy's
+wallpaper command. Omarchy performs its native reveal, then a Quickshell
+`PanelWindow` renders the video on Wayland's bottom layer using Qt Multimedia.
+The poster also prevents an unrelated older wallpaper from flashing during
+video-to-video changes.
 
-Playback runs as a transient systemd user service:
-
-```text
-motion-backgrounds-wallpaper.service
-```
+Qt's FFmpeg backend automatically selects an available hardware decoder. The
+wallpaper surface is part of `omarchy-shell`, is silent, loops indefinitely, and
+is recreated per connected output.
 
 ## Botanical Lock integration
 
@@ -117,11 +125,20 @@ motion-backgrounds list
 motion-backgrounds remove new-wallpaper.mp4
 motion-backgrounds pick
 motion-backgrounds apply /path/to/wallpaper.mp4
+motion-backgrounds apply Katana.mp4
 motion-backgrounds status
 motion-backgrounds stop
 motion-backgrounds reconcile
 motion-backgrounds bootstrap
 motion-backgrounds cleanup
+```
+
+`apply` accepts either a full path or the filename of a wallpaper in the global
+library. For example, both forms below are valid:
+
+```bash
+motion-backgrounds apply "$HOME/.config/motion-backgrounds/walls/Katana.mp4"
+motion-backgrounds apply Katana.mp4
 ```
 
 ## Storage
@@ -151,7 +168,8 @@ Cleanup stops playback and removes the menu override, saved state, and thumbnail
 
 ## Troubleshooting
 
-- Remove separate `mpvpaper` autostart commands before enabling this plugin; competing processes can cover one another.
+- Remove separate wallpaper-player autostart commands before enabling this
+  plugin; competing layer-shell surfaces can cover one another.
 - Confirm the plugin is enabled with `omarchy plugin list`.
-- Check live playback with `systemctl --user status motion-backgrounds-wallpaper.service`.
+- Check live playback with `omarchy-shell motion-backgrounds status`.
 - Run the controller's `status` command to print the saved active-video path.

@@ -28,7 +28,6 @@ readonly LEGACY_DEFAULT_WALLPAPER_NAME="samurai-katana-in-forest-cinematic-4k-li
 readonly BUNDLED_WALLPAPER="$PLUGIN_DIR/assets/walls/$DEFAULT_WALLPAPER_NAME"
 readonly FALLBACK_THUMBNAIL="$PLUGIN_DIR/assets/video.svg"
 readonly BACKGROUND_TRANSITION_SECONDS="0.46"
-readonly PLAYER_UNIT="motion-backgrounds-wallpaper.service"
 
 usage() {
   cat <<'USAGE'
@@ -40,7 +39,7 @@ Commands:
   pick             Open the mixed image/video wallpaper picker
   add <file>       Copy a wallpaper into the global library and activate it
   remove <file>    Move a global wallpaper to the trash
-  apply <file>     Apply an image or video immediately
+  apply <file>     Apply a path or a filename from the global library
   reconcile        Restore or reconcile the saved live wallpaper
   stop             Stop the live wallpaper and clear its saved state
   list             List removable wallpapers in the global library
@@ -188,10 +187,28 @@ remove_cli() {
 }
 
 check_dependencies() {
-  if ! command -v mpvpaper >/dev/null 2>&1; then
-    notify_error "Install mpvpaper first: omarchy pkg aur add mpvpaper"
-    return 1
+  local qml_dir="/usr/lib/qt6/qml"
+  local plugins_dir="/usr/lib/qt6/plugins"
+
+  if command -v qmake6 >/dev/null 2>&1; then
+    qml_dir=$(qmake6 -query QT_INSTALL_QML 2>/dev/null || printf '%s' "$qml_dir")
+    plugins_dir=$(qmake6 -query QT_INSTALL_PLUGINS 2>/dev/null || printf '%s' "$plugins_dir")
   fi
+
+  [[ -f $qml_dir/QtMultimedia/qmldir ]] || {
+    notify_error "Install the official Qt video backend: omarchy pkg add qt6-multimedia-ffmpeg"
+    return 1
+  }
+
+  [[ -f $plugins_dir/multimedia/libffmpegmediaplugin.so ]] || {
+    notify_error "Install the official Qt FFmpeg backend: omarchy pkg add qt6-multimedia-ffmpeg"
+    return 1
+  }
+
+  command -v ffmpeg >/dev/null 2>&1 || {
+    notify_error "Install the official video tools: omarchy pkg add ffmpeg"
+    return 1
+  }
 }
 
 bootstrap() {
@@ -211,7 +228,7 @@ bootstrap() {
   install_cli
 
   if [[ -e $DEFAULT_PENDING_FILE ]]; then
-    # Keep the pending marker when mpvpaper is unavailable. A later bootstrap
+    # Keep the pending marker when Qt Multimedia is unavailable. A later bootstrap
     # will finish first-run activation after the dependency is installed.
     if check_dependencies; then
       set_live "$default_wallpaper" || true
@@ -230,14 +247,7 @@ cleanup() {
 }
 
 stop_player() {
-  systemctl --user stop "$PLAYER_UNIT" >/dev/null 2>&1 || true
-  pkill -x mpvpaper 2>/dev/null || true
-
-  local attempt
-  for attempt in {1..20}; do
-    pgrep -x mpvpaper >/dev/null 2>&1 || return 0
-    sleep 0.05
-  done
+  omarchy-shell -q motion-backgrounds stopPlayback >/dev/null 2>&1 || true
 }
 
 clear_state() {
@@ -279,31 +289,12 @@ write_state() {
 
 start_player() {
   local path="$1"
-  local player attempt
 
-  player=$(command -v mpvpaper 2>/dev/null || true)
-  [[ -n $player ]] || {
-    notify_error "Install mpvpaper first: omarchy pkg aur add mpvpaper"
+  check_dependencies || return 1
+  if ! omarchy-shell motion-backgrounds play "$path" >/dev/null 2>&1; then
+    notify_error "Omarchy Shell is not running; restart it and try again"
     return 1
-  }
-
-  stop_player
-  systemd-run --user --quiet --collect \
-    --unit="${PLAYER_UNIT%.service}" \
-    --property=Type=simple \
-    --property=Restart=on-failure \
-    --property=RestartSec=1s \
-    -- "$player" -l bottom -p -o "no-audio loop hwdec=auto" ALL "$path"
-
-  for attempt in {1..20}; do
-    if systemctl --user is-active --quiet "$PLAYER_UNIT" && pgrep -x mpvpaper >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 0.05
-  done
-
-  notify_error "mpvpaper did not stay running"
-  return 1
+  fi
 }
 
 active_live_path() {
@@ -319,16 +310,14 @@ active_live_path() {
 prepare_live_handoff() {
   local path poster
 
-  if pgrep -x mpvpaper >/dev/null 2>&1; then
-    path=$(active_live_path)
-    if [[ -n $path ]]; then
-      poster=$(thumbnail_for_video "$path")
-      if [[ -n $poster && -f $poster ]]; then
-        # Prime Omarchy's background beneath mpvpaper before removing the live
-        # surface. This keeps video-to-video and video-to-image transitions
-        # from briefly exposing an unrelated older wallpaper.
-        omarchy-shell -q background setInstant "$poster" >/dev/null 2>&1 || true
-      fi
+  path=$(active_live_path)
+  if [[ -n $path ]]; then
+    poster=$(thumbnail_for_video "$path")
+    if [[ -n $poster && -f $poster ]]; then
+      # Prime Omarchy's background beneath the video surface before removing
+      # it. This keeps video-to-video and video-to-image transitions from
+      # briefly exposing an unrelated older wallpaper.
+      omarchy-shell -q background setInstant "$poster" >/dev/null 2>&1 || true
     fi
   fi
 
@@ -359,7 +348,8 @@ set_live() {
   fi
 
   current=$(active_live_path)
-  if [[ $current == "$path" ]] && pgrep -x mpvpaper >/dev/null 2>&1; then
+  if [[ $current == "$path" ]]; then
+    start_player "$path"
     return 0
   fi
 
@@ -371,8 +361,8 @@ set_live() {
 
   prepare_live_handoff
   set_animated_backdrop "$poster"
-  start_player "$path"
   write_state "$path" "$scope" "$theme"
+  start_player "$path"
   mark_initialized
 }
 
@@ -393,11 +383,22 @@ set_static() {
 }
 
 apply_wallpaper() {
-  local path="${1:-}"
-  [[ -n $path ]] || {
+  local input="${1:-}"
+  local path
+
+  [[ -n $input ]] || {
     notify_error "No wallpaper was selected"
     return 2
   }
+
+  if [[ -f $input ]]; then
+    path=$(realpath "$input" 2>/dev/null || true)
+  elif [[ -f $WALLS_DIR/$input ]]; then
+    path=$(realpath "$WALLS_DIR/$input" 2>/dev/null || true)
+  else
+    notify_error "Wallpaper does not exist: $input"
+    return 1
+  fi
 
   if is_video "$path"; then
     set_live "$path"
@@ -563,7 +564,7 @@ reconcile() {
     fi
   fi
 
-  pgrep -x mpvpaper >/dev/null 2>&1 || start_player "$path"
+  start_player "$path"
 }
 
 thumbnail_for_video() {
